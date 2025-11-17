@@ -12,10 +12,7 @@ extension FormatterTextControllerExtension on TextEditingController {
     required AmountInputFormatter formatter,
     TextEditingValue? oldValue,
   }) {
-    value = formatter.formatEditUpdate(
-      oldValue ?? value,
-      TextEditingValue(text: text),
-    );
+    value = formatter.formatEditUpdate(oldValue ?? value, TextEditingValue(text: text));
 
     return this.text;
   }
@@ -25,9 +22,7 @@ extension FormatterTextControllerExtension on TextEditingController {
   String syncWithFormatter({required AmountInputFormatter formatter}) {
     value = TextEditingValue(
       text: formatter.formattedValue,
-      selection: TextSelection.collapsed(
-        offset: formatter.formatter.indexOfDot,
-      ),
+      selection: TextSelection.collapsed(offset: formatter.formatter.indexOfDot),
     );
 
     return text;

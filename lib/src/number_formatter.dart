@@ -56,16 +56,9 @@ class NumberFormatter {
       fractionalDigits: fractionalDigits,
       initialValue: initialValue.toDouble(),
       isEmptyAllowed: isEmptyAllowed,
-      initialFormattedValue: '${_processIntegerPart(
-        integerPart: doubleParts.first,
-        thSeparator: groupSeparator,
-        intSpDigits: groupedDigits,
-      )}'
-          '${_processDecimalPart(
-        decimalPart: doubleParts.last,
-        ftlDigits: fractionalDigits,
-        dcSeparator: decimalSeparator,
-      )}',
+      initialFormattedValue:
+          '${_processIntegerPart(integerPart: doubleParts.first, thSeparator: groupSeparator, intSpDigits: groupedDigits)}'
+          '${_processDecimalPart(decimalPart: doubleParts.last, ftlDigits: fractionalDigits, dcSeparator: decimalSeparator)}',
       indexOfDot: doubleParts.first.length,
     );
   }
@@ -92,7 +85,7 @@ class NumberFormatter {
         _currentValue = initialValue ?? 0,
         _indexOfDot = indexOfDot;
 
-  /// Default setting options for the formatter.
+  /// Default settings options for the formatter.
   NumberFormatter.defaultSettings()
       : _intLthLimiter = kIntegralLengthLimit,
         _intSeparator = kComma,
@@ -102,7 +95,7 @@ class NumberFormatter {
         _formattedNum = kEmptyValue,
         _currentValue = 0,
         _indexOfDot = -1,
-        _numPattern = RegExp('[^0-9$kDot]'),
+        _numPattern = RegExp('[^0-9$kDot-]'),
         _isEmptyAllowed = false;
 
   /// Unicode "Left-To-Right Embedding" (LRE) character \u202A.
@@ -264,20 +257,27 @@ class NumberFormatter {
     required String thSeparator,
     required int intSpDigits,
   }) {
-    if (integerPart.length < intSpDigits) return integerPart;
+    // Check if the integer part starts with a negative sign
+    final isNegative = integerPart.startsWith('-');
+    final digitsOnly = isNegative ? integerPart.substring(1) : integerPart;
+
+    if (digitsOnly.length < intSpDigits) {
+      return isNegative ? '-$digitsOnly' : digitsOnly;
+    }
 
     final intBuffer = StringBuffer();
-    for (var i = 1; i <= integerPart.length; i++) {
-      intBuffer.write(integerPart[integerPart.length - i]);
+    for (var i = 1; i <= digitsOnly.length; i++) {
+      intBuffer.write(digitsOnly[digitsOnly.length - i]);
 
-      if (i % intSpDigits == 0 && i != integerPart.length) {
+      if (i % intSpDigits == 0 && i != digitsOnly.length) {
         intBuffer.write(thSeparator);
       }
     }
 
     // As the writes to buffer was made in reversed order it should
     // be reversed back.
-    return String.fromCharCodes(intBuffer.toString().codeUnits.reversed);
+    final result = String.fromCharCodes(intBuffer.toString().codeUnits.reversed);
+    return isNegative ? '-$result' : result;
   }
 
   /// This method should be used to process the decimal part of the
@@ -311,21 +311,18 @@ class NumberFormatter {
     }
 
     _doubleValue = inputNumber;
+    final isNegative = inputNumber < 0;
     doubleParts ??= inputNumber.abs().toString().split(kDot);
 
-    // Set the index of dot to the length of the integral part of the number.
-    _indexOfDot = doubleParts.first.length;
+    // Prepend negative sign if the number is negative
+    final integerPartWithSign = isNegative ? '-${doubleParts.first}' : doubleParts.first;
 
-    return _formattedNum = '${_processIntegerPart(
-      integerPart: doubleParts.first,
-      thSeparator: intSeparator,
-      intSpDigits: intSpDigits,
-    )}'
-        '${_processDecimalPart(
-      decimalPart: doubleParts.last,
-      ftlDigits: ftlDigits,
-      dcSeparator: dcSeparator,
-    )}';
+    // Set the index of dot to the length of the integral part of the number.
+    _indexOfDot = integerPartWithSign.length;
+
+    return _formattedNum =
+        '${_processIntegerPart(integerPart: integerPartWithSign, thSeparator: intSeparator, intSpDigits: intSpDigits)}'
+            '${_processDecimalPart(decimalPart: doubleParts.last, ftlDigits: ftlDigits, dcSeparator: dcSeparator)}';
   }
 
   String _processEmptyValue({
@@ -359,7 +356,11 @@ class NumberFormatter {
       );
     }
 
-    final doubleParts = textInput
+    // Check if the input starts with a negative sign
+    final isNegative = textInput.startsWith('-');
+    final textWithoutSign = isNegative ? textInput.substring(1) : textInput;
+
+    final doubleParts = textWithoutSign
         .replaceAll(
           _numPattern,
           kEmptyValue,
@@ -374,9 +375,7 @@ class NumberFormatter {
       // It might be the case that the user deleted the decimal point or part of
       // the input with a decimal point was deleted with the selection range.
       // In this case, the decimal part should be zeroed.
-      if (ftlDigits > 0 &&
-          _indexOfDot > 0 &&
-          _indexOfDot < doubleParts.first.length) {
+      if (ftlDigits > 0 && _indexOfDot > 0 && _indexOfDot < doubleParts.first.length) {
         doubleParts.first = doubleParts.first.substring(0, _indexOfDot);
       }
     } else if (doubleParts.last.length > ftlDigits) {
@@ -389,8 +388,7 @@ class NumberFormatter {
     // Checks if the integer part is empty, and sets the value to '0' if true.
     if (doubleParts.first.isEmpty) {
       doubleParts.first = kZeroValue;
-    } else if (doubleParts.first[0] == kZeroValue &&
-        doubleParts.first.length > 1) {
+    } else if (doubleParts.first[0] == kZeroValue && doubleParts.first.length > 1) {
       var index = -1;
 
       for (var i = 0; i < doubleParts.first.length; i++) {
@@ -406,10 +404,12 @@ class NumberFormatter {
       }
     }
 
+    // Prepend negative sign if input was negative
+    final numericString = '${doubleParts.first}$kDot${doubleParts.last}';
+    final signedNumericString = isNegative ? '-$numericString' : numericString;
+
     return _processNumberValue(
-      inputNumber: double.tryParse(
-        '${doubleParts.first}$kDot${doubleParts.last}',
-      ),
+      inputNumber: double.tryParse(signedNumericString),
       doubleParts: doubleParts,
     );
   }

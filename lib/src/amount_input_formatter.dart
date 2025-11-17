@@ -84,7 +84,7 @@ class AmountInputFormatter extends TextInputFormatter {
   }) {
     // Assuming that it is the start of the input set the selection to the end
     // of the integer part.
-    if (oldValue.selection.baseOffset <= 1 && formatter.doubleValue <= 9) {
+    if (oldValue.selection.baseOffset <= 1 && formatter.doubleValue.abs() <= 9) {
       if (newText.isEmpty) return 0;
 
       if (formatter.doubleValue == 0) {
@@ -101,8 +101,8 @@ class AmountInputFormatter extends TextInputFormatter {
     // Assuming that it is the start of the input set the selection to the
     // end of the integer part.
     if (oldValue.selection.baseOffset <= 1 &&
-        formatter.doubleValue <= 9 &&
-        formatter.previousValue <= 9) {
+        formatter.doubleValue.abs() <= 9 &&
+        formatter.previousValue.abs() <= 9) {
       return formatter.indexOfDot;
     }
 
@@ -113,9 +113,7 @@ class AmountInputFormatter extends TextInputFormatter {
       final newSelection = newValue.selection;
 
       if (newSelection.baseOffset > oldSelection.baseOffset) {
-        return newSelection.baseOffset > newText.length
-            ? newText.length
-            : newSelection.baseOffset;
+        return newSelection.baseOffset > newText.length ? newText.length : newSelection.baseOffset;
       }
 
       return newSelection.baseOffset;
@@ -126,15 +124,13 @@ class AmountInputFormatter extends TextInputFormatter {
 
     if (newText.length < oldValue.text.length) {
       offset = oldValue.text.length - newText.length > 1
-          ? oldValue.selection.baseOffset -
-              (oldValue.text.length - newText.length)
+          ? oldValue.selection.baseOffset - (oldValue.text.length - newText.length)
           : oldValue.selection.baseOffset - 1;
       return offset < 0 ? 0 : offset;
     }
 
     offset = newText.length - oldValue.text.length > 1
-        ? oldValue.selection.baseOffset +
-            (newText.length - oldValue.text.length)
+        ? oldValue.selection.baseOffset + (newText.length - oldValue.text.length)
         : oldValue.selection.baseOffset + 1;
 
     return offset > newText.length ? newText.length - 1 : offset;
@@ -179,10 +175,11 @@ class AmountInputFormatter extends TextInputFormatter {
     num number, {
     TextEditingController? attachedController,
   }) {
-    if (attachedController == null) return formatter.setNumValue(number);
+    final formattedText = formatter.setNumValue(number);
+    if (attachedController == null) return formattedText;
 
     attachedController.value = TextEditingValue(
-      text: formatter.setNumValue(number),
+      text: formattedText,
       selection: TextSelection.collapsed(offset: formatter.indexOfDot),
     );
 
