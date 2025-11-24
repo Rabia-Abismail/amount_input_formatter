@@ -176,6 +176,108 @@ class AmountInputFormatter extends TextInputFormatter {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
+    // Special case: Handle deletion right after decimal separator
+    // When cursor is right after the decimal separator and user hits delete,
+    // we should remove the digit before the decimal separator instead of removing the separator itself
+    final decimalSeparator = formatter.dcSeparator;
+    final oldText = oldValue.text;
+    final oldSelection = oldValue.selection;
+    final newTextInput = newValue.text;
+    
+    // Check if we're deleting (text got shorter)
+    final isDeleting = newTextInput.length < oldText.length;
+    
+    // Check if old text has decimal separator
+    final oldHasDecimalSeparator = oldText.contains(decimalSeparator);
+    
+    // Check if cursor was right after decimal separator in old value
+    // We need to find the position of decimal separator in old text
+    // Use lastIndexOf in case there are multiple occurrences (unlikely but possible)
+    final decimalSeparatorIndex = oldHasDecimalSeparator ? oldText.lastIndexOf(decimalSeparator) : -1;
+    // Check if cursor is right after the decimal separator (delete key deletes the character before cursor)
+    final oldCursorOffset = oldSelection.baseOffset;
+    final cursorWasAfterDecimalSeparator = decimalSeparatorIndex >= 0 && 
+        oldCursorOffset == decimalSeparatorIndex + 1;
+    
+    // Check if new text doesn't have decimal separator but old text did
+    final newHasDecimalSeparator = newTextInput.contains(decimalSeparator);
+    final decimalSeparatorWasRemoved = oldHasDecimalSeparator && !newHasDecimalSeparator;
+    
+    // If all conditions are met, we need to modify the deletion behavior
+    if (isDeleting && cursorWasAfterDecimalSeparator && decimalSeparatorWasRemoved) {
+      // Instead of removing the decimal separator, we should remove the last digit 
+      // from the integer part before the decimal separator
+      // Work directly with the old text string to preserve exact digits
+      final groupSeparator = formatter.intSeparator;
+      
+      // Find the decimal separator position in the old text
+      if (decimalSeparatorIndex > 0) {
+        // Extract the integer part (everything before the decimal separator)
+        // Remove group separators to get just the digits
+        final integerPartWithSeparators = oldText.substring(0, decimalSeparatorIndex);
+        final integerPartDigits = integerPartWithSeparators.replaceAll(groupSeparator, '').replaceAll(RegExp(r'[^\d\-]'), '');
+        
+        // Check if we have a negative sign
+        final isNegative = integerPartDigits.startsWith('-');
+        final integerDigitsOnly = isNegative ? integerPartDigits.substring(1) : integerPartDigits;
+        
+        // Remove the last digit from the integer part
+        if (integerDigitsOnly.length > 1) {
+          final newIntegerDigits = integerDigitsOnly.substring(0, integerDigitsOnly.length - 1);
+          
+          // Get the decimal part from the old text (everything after the decimal separator)
+          final decimalPart = oldText.substring(decimalSeparatorIndex + 1);
+          // Remove any non-digit characters from decimal part (like group separators, though unlikely)
+          final decimalDigitsOnly = decimalPart.replaceAll(RegExp(r'[^\d]'), '');
+          
+          // Reconstruct the number string with the sign
+          final newNumericString = isNegative 
+              ? '-$newIntegerDigits$decimalSeparator$decimalDigitsOnly'
+              : '$newIntegerDigits$decimalSeparator$decimalDigitsOnly';
+          
+          // Process the modified text
+          final processedText = formatter.processTextValue(
+            textInput: newNumericString,
+          );
+          
+          if (processedText == null) return oldValue;
+          
+          // Calculate cursor position - should be before the decimal separator
+          final newDecimalSeparatorIndex = processedText.indexOf(decimalSeparator);
+          final cursorOffset = newDecimalSeparatorIndex >= 0 ? newDecimalSeparatorIndex : processedText.length;
+          
+          return TextEditingValue(
+            text: processedText,
+            selection: TextSelection.collapsed(offset: cursorOffset),
+          );
+        } else if (integerDigitsOnly.length == 1 && integerDigitsOnly != '0') {
+          // If integer part has only one non-zero digit, removing it makes it "0"
+          final decimalPart = oldText.substring(decimalSeparatorIndex + 1);
+          final decimalDigitsOnly = decimalPart.replaceAll(RegExp(r'[^\d]'), '');
+          
+          final newNumericString = isNegative 
+              ? '-0$decimalSeparator$decimalDigitsOnly'
+              : '0$decimalSeparator$decimalDigitsOnly';
+          
+          final processedText = formatter.processTextValue(
+            textInput: newNumericString,
+          );
+          
+          if (processedText == null) return oldValue;
+          
+          final newDecimalSeparatorIndex = processedText.indexOf(decimalSeparator);
+          final cursorOffset = newDecimalSeparatorIndex >= 0 ? newDecimalSeparatorIndex : processedText.length;
+          
+          return TextEditingValue(
+            text: processedText,
+            selection: TextSelection.collapsed(offset: cursorOffset),
+          );
+        }
+        // If integer part is "0", we can't remove a digit, so just position cursor before decimal separator
+        // This case will fall through to normal processing, but cursor positioning should be handled
+      }
+    }
+    
     final newText = formatter.processTextValue(
       textInput: newValue.text,
     );
