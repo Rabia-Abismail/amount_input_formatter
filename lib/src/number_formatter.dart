@@ -349,23 +349,46 @@ class NumberFormatter {
     required String textInput,
   }) {
     // Case when text input is deleted completely or is initially empty.
+    // But if user types "-" on empty field, we want to show "-0" not empty
     if (textInput.isEmpty) {
-      return _processEmptyValue(
-        textInput: textInput,
-        isEmptyAllowed: isEmptyAllowed,
-      );
+      // If previous value was -0.0 and user deleted everything, show "-0" instead of empty
+      if (_currentValue == 0 && _formattedNum.startsWith('-')) {
+        // User deleted text but we want to preserve the negative sign context
+        // Actually, if text is empty, we should process as empty
+        return _processEmptyValue(textInput: textInput, isEmptyAllowed: isEmptyAllowed);
+      }
+      return _processEmptyValue(textInput: textInput, isEmptyAllowed: isEmptyAllowed);
     }
 
     // Check if the input starts with a negative sign
+    // Handle multiple negative signs by only considering the first one
     final isNegative = textInput.startsWith('-');
-    final textWithoutSign = isNegative ? textInput.substring(1) : textInput;
+    String textWithoutSign = isNegative ? textInput.substring(1) : textInput;
+    // Remove any additional negative signs that might have been typed
+    if (isNegative && textWithoutSign.startsWith('-')) {
+      // User typed multiple negative signs, remove them
+      textWithoutSign = textWithoutSign.replaceAll('-', '');
+    }
 
-    final doubleParts = textWithoutSign
-        .replaceAll(
-          _numPattern,
-          kEmptyValue,
-        )
-        .split(dcSeparator);
+    // Special early check: If input is just "-" (after cleaning), always show "-0"
+    // This handles cases where user selects all and types "-", or types "-" on "-0"
+    // Case 1: User selects all text and types "-" -> should show "-0" not "0."
+    // Case 2: User types "-" again on "-0" -> should show "-0" not empty
+    if (isNegative && textWithoutSign.isEmpty) {
+      const integerPartWithSign = '-0';
+      final formattedIntegerPart = _processIntegerPart(
+        integerPart: integerPartWithSign,
+        thSeparator: intSeparator,
+        intSpDigits: intSpDigits,
+      );
+      _indexOfDot = formattedIntegerPart.length;
+      _doubleValue = 0;
+      _previousValue = _currentValue;
+      return _formattedNum = '$formattedIntegerPart'
+          '${_processDecimalPart(decimalPart: kEmptyValue, ftlDigits: ftlDigits, dcSeparator: dcSeparator)}';
+    }
+
+    final doubleParts = textWithoutSign.replaceAll(_numPattern, kEmptyValue).split(dcSeparator);
 
     // In case if there is no decimal part in the provided string
     // representation of number.
@@ -408,10 +431,65 @@ class NumberFormatter {
     final numericString = '${doubleParts.first}$kDot${doubleParts.last}';
     final signedNumericString = isNegative ? '-$numericString' : numericString;
 
-    return _processNumberValue(
-      inputNumber: double.tryParse(signedNumericString),
-      doubleParts: doubleParts,
-    );
+    // Parse the number to check if it's zero (including -0.0)
+    final parsedNumber = double.tryParse(signedNumericString);
+    final parsedIsZero = parsedNumber != null && parsedNumber == 0.0;
+
+    // Special case: Allow "-" to be typed when value is zero, so user can start typing negative numbers
+    // Check if input is just "-" or "-" with only zeros
+    final integerPartIsZero = doubleParts.first == kZeroValue || doubleParts.first.isEmpty;
+    // Check if decimal part is empty or contains only zeros (after removing non-digits)
+    final decimalDigitsOnly = doubleParts.last.replaceAll(RegExp('[^0-9]'), kEmptyValue);
+    final decimalPartEmptyOrZero = doubleParts.last.isEmpty ||
+        (decimalDigitsOnly.isNotEmpty &&
+            decimalDigitsOnly.split('').every((char) => char == kZeroValue));
+    final isOnlyNegativeSign = isNegative && integerPartIsZero && decimalPartEmptyOrZero;
+
+    // Handle special case: if user typed "-" resulting in zero (including -0.0), format as "-0" to allow typing negative numbers
+    // This handles:
+    // 1. User selects all and types "-" (input is just "-") - always show "-0" regardless of previous value
+    // 2. User types "-" on empty field or zero value
+    // 3. User types "-" when value is already -0.0 - keep as "-0" instead of becoming empty
+    if (isOnlyNegativeSign && parsedIsZero) {
+      final integerPartWithSign = '-${doubleParts.first}';
+      // Format the integer part to get the actual formatted string (may include group separators)
+      final formattedIntegerPart = _processIntegerPart(
+        integerPart: integerPartWithSign,
+        thSeparator: intSeparator,
+        intSpDigits: intSpDigits,
+      );
+      // Set indexOfDot to the position after the formatted integer part
+      // This ensures cursor is positioned correctly after "-0" (before decimal separator if exists)
+      _indexOfDot = formattedIntegerPart.length;
+      _doubleValue = 0; // Keep value as 0, but display with negative sign
+      _previousValue = _currentValue; // Update previous value for cursor calculation
+      return _formattedNum = '$formattedIntegerPart'
+          '${_processDecimalPart(decimalPart: doubleParts.last, ftlDigits: ftlDigits, dcSeparator: dcSeparator)}';
+    }
+
+    // If parsed number is null (invalid), return null to reject the input
+    if (parsedNumber == null) {
+      return null;
+    }
+
+    // Special handling: If input was "-" and result is 0 (including -0.0),
+    // we want to show "-0" not "0"
+    // This handles case 1: user selects all and types "-"
+    if (isNegative && parsedNumber == 0.0 && integerPartIsZero && decimalPartEmptyOrZero) {
+      final integerPartWithSign = '-${doubleParts.first}';
+      final formattedIntegerPart = _processIntegerPart(
+        integerPart: integerPartWithSign,
+        thSeparator: intSeparator,
+        intSpDigits: intSpDigits,
+      );
+      _indexOfDot = formattedIntegerPart.length;
+      _doubleValue = 0;
+      _previousValue = _currentValue;
+      return _formattedNum = '$formattedIntegerPart'
+          '${_processDecimalPart(decimalPart: doubleParts.last, ftlDigits: ftlDigits, dcSeparator: dcSeparator)}';
+    }
+
+    return _processNumberValue(inputNumber: parsedNumber, doubleParts: doubleParts);
   }
 
   /// This method will process and format the given numerical value through the

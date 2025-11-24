@@ -82,6 +82,35 @@ class AmountInputFormatter extends TextInputFormatter {
     required TextEditingValue newValue,
     required String newText,
   }) {
+    // Special case: Handle when user types "-" on zero value
+    // The formatted value will be "-0" (or "-0.000"), cursor should be after "-0"
+    final oldTextStartsWithMinus = oldValue.text.startsWith('-');
+    final newTextStartsWithMinus = newText.startsWith('-');
+    if (formatter.doubleValue == 0 &&
+        newTextStartsWithMinus &&
+        !oldTextStartsWithMinus &&
+        (oldValue.text == '0' ||
+            oldValue.text.isEmpty ||
+            oldValue.text.replaceAll(RegExp('[^0-9.]'), '').replaceAll('.', '') == '0')) {
+      // User typed "-" on zero, position cursor after "-0" (at indexOfDot)
+      return formatter.indexOfDot;
+    }
+
+    // Special case: Handle when user types a digit after "-0"
+    // Transition from "-0" to negative number (e.g., "-1")
+    // Check if we're transitioning from zero to a small negative number
+    final isTypingDigitAfterNegativeZero = formatter.previousValue == 0 &&
+        formatter.doubleValue < 0 &&
+        oldTextStartsWithMinus &&
+        newTextStartsWithMinus &&
+        formatter.doubleValue.abs() <= 9;
+
+    if (isTypingDigitAfterNegativeZero) {
+      // User typed a digit after "-0", position cursor after the digit (at indexOfDot)
+      // This prevents cursor from jumping to decimal separator
+      return formatter.indexOfDot;
+    }
+
     // Assuming that it is the start of the input set the selection to the end
     // of the integer part.
     if (oldValue.selection.baseOffset <= 1 && formatter.doubleValue.abs() <= 9) {
@@ -100,6 +129,7 @@ class AmountInputFormatter extends TextInputFormatter {
 
     // Assuming that it is the start of the input set the selection to the
     // end of the integer part.
+    // Handle small numbers (including negative) when cursor is at start
     if (oldValue.selection.baseOffset <= 1 &&
         formatter.doubleValue.abs() <= 9 &&
         formatter.previousValue.abs() <= 9) {
@@ -109,6 +139,11 @@ class AmountInputFormatter extends TextInputFormatter {
     // Case if the overall text length didn't change
     // (i.e. one character replacement).
     if (oldValue.text.length == newText.length) {
+      // Special case: If we're typing a digit after "-0", use indexOfDot instead of newSelection
+      if (isTypingDigitAfterNegativeZero) {
+        return formatter.indexOfDot;
+      }
+
       final oldSelection = oldValue.selection;
       final newSelection = newValue.selection;
 
